@@ -148,3 +148,9 @@ Für globale Erreichbarkeit kann z.B. `ngrok` verwendet werden:
 ```bash
 ngrok http 8080
 ```
+
+## Tests ausführen
+
+```bash
+make test
+```

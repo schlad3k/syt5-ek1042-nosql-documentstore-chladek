@@ -5,6 +5,7 @@ import at.htlwrn.couchbase.model.Person;
 import at.htlwrn.couchbase.repository.PersonRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,7 +29,9 @@ public class PersonService {
     }
 
     public List<Person> findAll() {
-        return (List<Person>) repository.findAll();
+        List<Person> result = new ArrayList<>();
+        repository.findAll().forEach(result::add);
+        return result;
     }
 
     public Optional<Person> update(String id, Person updated) {
