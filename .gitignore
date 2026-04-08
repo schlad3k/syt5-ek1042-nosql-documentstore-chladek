@@ -2,6 +2,7 @@
 build/
 *.class
 *.jar
+!app/gradle/wrapper/gradle-wrapper.jar
 .idea/
 *.iml
 .DS_Store
