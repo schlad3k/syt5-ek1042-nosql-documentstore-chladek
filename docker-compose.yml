@@ -32,7 +32,7 @@ services:
       - cb-node3-data:/opt/couchbase/var
 
   couchbase-init:
-    image: curlimages/curl:latest
+    image: curlimages/curl:8.7.1
     container_name: couchbase-init
     depends_on:
       - couchbase-node1
