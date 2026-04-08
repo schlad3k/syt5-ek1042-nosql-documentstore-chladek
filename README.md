@@ -1,6 +1,6 @@
 # Couchbase NoSQL Document Store
 
-INSY5 Datenmanagement — Übung: NoSQL Document Store mit Couchbase
+SYT5 EK 10.4.2 — Datenmanagement: NoSQL Document Store mit Couchbase
 
 ## Über das Projekt
 
