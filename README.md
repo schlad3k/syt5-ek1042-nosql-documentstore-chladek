@@ -133,3 +133,130 @@ Node 1 fällt aus → Automatic Failover:
 ### Cross-Datacenter Replication (XDCR)
 
 Für geographisch verteilte Deployments bietet Couchbase **XDCR** — eine asynchrone Replikation zwischen separaten Clustern. Nur in der Enterprise Edition verfügbar. [6]
+
+## Projektaufbau
+
+### Technologien
+
+- **Couchbase Community Server 7.6** — NoSQL Document Store
+- **Spring Boot 3.3** — REST API Framework
+- **Spring Data Couchbase** — Repository-Abstraktion für Couchbase
+- **Docker Compose** — Container-Orchestrierung
+- **Java 21 / Gradle 8**
+
+### Projektstruktur
+
+```
+syt5-ek1042-nosql-documentstore-chladek/
+├── .env.example                # Konfigurierbare Umgebungsvariablen
+├── docker-compose.yml          # 3 Couchbase-Nodes + Init + Spring App
+├── couchbase-init.sh           # Cluster-Setup via REST API
+├── Makefile                    # Shortcuts (make up/down/logs/test)
+└── app/
+    ├── Dockerfile              # Multi-Stage Build (Gradle → JRE)
+    ├── build.gradle            # Spring Boot 3.3 + Spring Data Couchbase
+    └── src/main/java/at/htlwrn/couchbase/
+        ├── CouchbaseApp.java           # Spring Boot Entry Point
+        ├── model/Person.java           # @Document Entity
+        ├── repository/PersonRepository.java  # CouchbaseRepository Interface
+        ├── service/PersonService.java        # CRUD Business Logic
+        └── controller/PersonController.java  # REST Endpoints
+```
+
+## Installation und Start
+
+### Voraussetzungen
+
+- Docker & Docker Compose v2
+- Java 21 (nur für lokale Entwicklung ohne Docker)
+
+### Konfiguration
+
+```bash
+cp .env.example .env
+# Bei Bedarf Werte in .env anpassen (Passwort, Ports, Memory-Quotas)
+```
+
+### Starten
+
+```bash
+make up
+```
+
+Dies startet:
+1. 3 Couchbase-Nodes (mit statischen IPs im Docker-Netzwerk)
+2. Init-Script (konfiguriert Cluster, fügt Nodes hinzu, erstellt Bucket + Primary Index)
+3. Spring Boot App auf dem konfigurierten Port (Standard: 8080)
+
+### Stoppen
+
+```bash
+make down
+```
+
+## CRUD API
+
+Base URL: `http://localhost:8080/api/persons`
+
+### Create — POST /api/persons
+
+```bash
+curl -X POST http://localhost:8080/api/persons \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Max Mustermann", "email": "max@example.com", "age": 30}'
+```
+
+Response `201`:
+```json
+{"id": "person::abc-123", "name": "Max Mustermann", "email": "max@example.com", "age": 30}
+```
+
+### Read All — GET /api/persons
+
+```bash
+curl http://localhost:8080/api/persons
+```
+
+### Read by ID — GET /api/persons/{id}
+
+```bash
+curl http://localhost:8080/api/persons/person::abc-123
+```
+
+### Update — PUT /api/persons/{id}
+
+```bash
+curl -X PUT http://localhost:8080/api/persons/person::abc-123 \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Max M.", "email": "max2@example.com", "age": 31}'
+```
+
+### Delete — DELETE /api/persons/{id}
+
+```bash
+curl -X DELETE http://localhost:8080/api/persons/person::abc-123
+```
+
+## Hochverfügbarkeits-Test
+
+```bash
+# 1. Testdaten anlegen
+curl -X POST http://localhost:8080/api/persons \
+  -H "Content-Type: application/json" \
+  -d '{"name": "HA Test", "email": "ha@test.com", "age": 1}'
+
+# 2. Node stoppen
+docker compose stop couchbase-node2
+
+# 3. API ist weiterhin erreichbar
+curl http://localhost:8080/api/persons
+
+# 4. Node wieder starten
+docker compose start couchbase-node2
+```
+
+## Tests ausführen
+
+```bash
+make test
+```
