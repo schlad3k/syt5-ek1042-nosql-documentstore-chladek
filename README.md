@@ -260,3 +260,102 @@ docker compose start couchbase-node2
 ```bash
 make test
 ```
+
+## Verteiltes Deployment
+
+Für ein Deployment über mehrere physische Maschinen (z.B. Laptop + Cloud-VM) wird **Tailscale** als Mesh-VPN verwendet, da die Rechner hinter NAT stehen.
+
+### Voraussetzungen
+
+- [Tailscale](https://tailscale.com/download) auf allen Maschinen installiert und verbunden
+- Docker (native, nicht Docker Desktop) auf jedem Rechner
+
+### Setup (2-Node Beispiel)
+
+```bash
+# Tailscale-IPs ermitteln
+tailscale ip -4   # z.B. 100.108.45.74 (Laptop), 100.116.29.101 (VM)
+```
+
+**Auf jedem Rechner — Couchbase starten:**
+
+```bash
+docker run -d --name couchbase --network host couchbase/server:community-7.6.0
+```
+
+**Cluster bilden (von Node 1 aus):**
+
+```bash
+NODE1=100.108.45.74
+NODE2=100.116.29.101
+
+# Node 1 initialisieren
+curl -X POST "http://$NODE1:8091/node/controller/rename" -d "hostname=$NODE1"
+curl -X POST "http://$NODE1:8091/node/controller/setupServices" -d "services=kv%2Cn1ql%2Cindex"
+curl -X POST "http://$NODE1:8091/pools/default" -d "memoryQuota=512&indexMemoryQuota=256"
+curl -X POST "http://$NODE1:8091/settings/web" -d "username=Administrator&password=password&port=8091"
+
+sleep 10
+
+# Node 2 hinzufügen + Rebalance
+curl -u Administrator:password -X POST "http://$NODE1:8091/controller/addNode" \
+  -d "hostname=$NODE2&user=Administrator&password=password&services=kv%2Cn1ql%2Cindex"
+
+curl -u Administrator:password -X POST "http://$NODE1:8091/controller/rebalance" \
+  -d "knownNodes=ns_1%40$NODE1%2Cns_1%40$NODE2"
+
+sleep 30
+
+# Bucket + Index
+curl -u Administrator:password -X POST "http://$NODE1:8091/pools/default/buckets" \
+  -d "name=demo&bucketType=couchbase&ramQuota=256&replicaNumber=1"
+
+sleep 10
+
+curl -u Administrator:password -X POST "http://$NODE1:8091/settings/indexes" -d "storageMode=forestdb"
+curl -u Administrator:password -X POST "http://$NODE1:8093/query/service" \
+  -d "statement=CREATE%20PRIMARY%20INDEX%20ON%20%60demo%60"
+
+# Auto-Failover aktivieren (30s Timeout)
+curl -u Administrator:password -X POST "http://$NODE1:8091/settings/autoFailover" \
+  -d "enabled=true&timeout=30"
+```
+
+**Spring Boot App starten:**
+
+```bash
+./gradlew bootRun --args='--spring.couchbase.connection-string=couchbase://100.108.45.74 --server.port=9090'
+```
+
+### Failover testen
+
+```bash
+# Daten anlegen
+curl -X POST http://localhost:9090/api/persons \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Failover Test", "email": "fail@test.com", "age": 1}'
+
+# Node 2 stoppen (auf der VM)
+ssh ubuntu@<VM_IP> "docker stop couchbase"
+
+# Manueller Failover (oder 30s warten für Auto-Failover)
+curl -u Administrator:password -X POST "http://100.108.45.74:8091/controller/failOver" \
+  -d "otpNode=ns_1%40100.116.29.101"
+
+# Daten sind noch verfügbar
+curl http://localhost:9090/api/persons
+```
+
+## Quellen
+
+[1] Couchbase Inc., "Why Couchbase?", https://docs.couchbase.com/server/current/introduction/why-couchbase.html
+
+[2] Couchbase Inc., "N1QL Language Reference", https://docs.couchbase.com/server/current/n1ql/n1ql-language-reference/index.html
+
+[3] Couchbase Inc., "vBuckets", https://docs.couchbase.com/server/current/learn/buckets-memory-and-storage/vbuckets.html
+
+[4] Couchbase Inc., "Services and Indexes", https://docs.couchbase.com/server/current/learn/services-and-indexes/services/services.html
+
+[5] Couchbase Inc., "Intra-Cluster Replication", https://docs.couchbase.com/server/current/learn/clusters-and-availability/intra-cluster-replication.html
+
+[6] Couchbase Inc., "Cross Data Center Replication (XDCR)", https://docs.couchbase.com/server/current/learn/clusters-and-availability/xdcr-overview.html
