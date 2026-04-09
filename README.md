@@ -2,155 +2,89 @@
 
 SYT5 EK 10.4.2 — Datenmanagement: NoSQL Document Store mit Couchbase
 
-## Über das Projekt
+## Inhaltsverzeichnis
 
-Dieses Projekt demonstriert die Verwendung von Couchbase als Document Store mittels einer Spring Boot REST API. 
-Ein 3-Knoten-Couchbase-Cluster wird via Docker Compose bereitgestellt.
+- [Was ist Couchbase?](#was-ist-couchbase)
+- [Grundstruktur und Datenmodell](#grundstruktur-und-datenmodell)
+- [Warum Couchbase?](#warum-couchbase)
+- [Replikation und Hochverfügbarkeit](#replikation-und-hochverfügbarkeit)
+- [Projektaufbau](#projektaufbau)
+- [Installation und Start](#installation-und-start)
+- [CRUD API](#crud-api)
+- [Hochverfügbarkeits-Test](#hochverfügbarkeits-test)
+- [Verteiltes Deployment](#verteiltes-deployment)
+- [Quellen](#quellen)
 
-## Technologien
+---
 
-- **Couchbase Community Server 7.6** — NoSQL Document Store
-- **Spring Boot 3.3** — REST API Framework
-- **Spring Data Couchbase** — Repository-Abstraktion für Couchbase
-- **Docker Compose** — Container-Orchestrierung
-- **Java 21 / Gradle 8**
+## Was ist Couchbase?
 
-## Couchbase — Grundlagen
+Couchbase Server ist eine verteilte, dokumentenorientierte NoSQL-Datenbank. Sie speichert Daten als JSON-Dokumente und kombiniert die Flexibilität eines Document Stores mit der Performance eines Key-Value-Stores. Couchbase wurde für Anwendungen entwickelt, die niedrige Latenz, hohe Verfügbarkeit und horizontale Skalierbarkeit erfordern [1].
 
-Couchbase ist ein verteilter NoSQL Document Store, der JSON-Dokumente speichert.
-Jedes Dokument wird über einen eindeutigen **Key** identifiziert und in einem **Bucket** (vergleichbar mit einer Datenbank) gespeichert.
+Im Gegensatz zu relationalen Datenbanken gibt es kein festes Schema — jedes Dokument kann eine unterschiedliche Struktur haben. Trotzdem bietet Couchbase mit N1QL eine SQL-ähnliche Abfragesprache, die den Einstieg für Entwickler mit SQL-Erfahrung erleichtert [2].
+
+## Grundstruktur und Datenmodell
+
+Couchbase organisiert Daten in einer hierarchischen Struktur:
+
+```
+Cluster
+ └── Bucket          (logischer Datencontainer, vergleichbar mit einer Datenbank)
+      └── Scope      (Namespace innerhalb eines Buckets)
+           └── Collection  (Gruppe von Dokumenten, vergleichbar mit einer Tabelle)
+                └── Document  (JSON-Datensatz mit eindeutigem Key)
+```
 
 ### Kernkonzepte
 
 | Konzept | Beschreibung |
 |---------|-------------|
-| **Bucket** | Logische Datencontainer (wie eine Datenbank) |
-| **Scope** | Namespace innerhalb eines Buckets |
-| **Collection** | Gruppe von Dokumenten (wie eine Tabelle) |
-| **Document** | JSON-Datensatz mit eindeutigem Key |
-| **N1QL** | SQL-ähnliche Abfragesprache für Couchbase |
+| **Cluster** | Verbund von Couchbase-Nodes, die gemeinsam Daten verwalten |
+| **Bucket** | Logischer Datencontainer mit eigener RAM-Quote und Replikationseinstellungen |
+| **Scope** | Namespace innerhalb eines Buckets (Standard: `_default`) |
+| **Collection** | Sammlung von Dokumenten innerhalb eines Scopes (Standard: `_default`) |
+| **Document** | JSON-Datensatz, identifiziert durch einen eindeutigen Key |
+| **vBucket** | Virtueller Bucket — Couchbase partitioniert Daten in 1024 vBuckets, die auf Nodes verteilt werden [3] |
 
-### Cluster-Funktionalität
+### Dienste (Services)
 
-Der Cluster besteht aus 3 Knoten (`couchbase-node1`, `couchbase-node2`, `couchbase-node3`).
-Couchbase verteilt Daten automatisch über sogenannte **vBuckets** auf alle Knoten.
+Couchbase trennt Workloads in unabhängige Dienste [4]:
 
-- **Replication Factor 2**: Jedes Dokument wird auf 2 weiteren Knoten repliziert
-- **Automatic Failover**: Fällt ein Knoten aus, übernehmen die anderen ohne Datenverlust
-- **Horizontal Scaling**: Weitere Knoten können zur Laufzeit hinzugefügt werden
+| Service | Funktion |
+|---------|----------|
+| **Data (KV)** | Key-Value-Operationen, Dokumentspeicherung |
+| **Query (N1QL)** | SQL-ähnliche Abfragen auf JSON-Daten |
+| **Index** | Sekundärindizes für performante Abfragen |
+| **Search** | Volltextsuche |
+| **Analytics** | OLAP-Workloads ohne Einfluss auf operative Daten |
+| **Eventing** | Serverseitige Funktionen, ausgelöst durch Datenänderungen |
 
-Die Cluster-Verwaltung ist über das **Couchbase Web UI** unter http://localhost:8091 erreichbar
-(Login: Administrator / password).
+### Beispiel-Dokument
 
-## Installation & Start
-
-### Voraussetzungen
-
-- Docker & Docker Compose v2
-- Java 21 (nur für lokale Entwicklung ohne Docker)
-
-### Starten
-
-```bash
-make up
-```
-
-Dies startet:
-1. 3 Couchbase-Knoten
-2. Init-Script (clustert die Knoten, erstellt Bucket `demo` + Primary Index)
-3. Spring Boot App auf Port 8080
-
-### Stoppen
-
-```bash
-make down
-```
-
-## CRUD API
-
-Base URL: `http://localhost:8080/api/persons`
-
-### Create — POST /api/persons
-
-```bash
-curl -X POST http://localhost:8080/api/persons \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Max Mustermann", "email": "max@example.com", "age": 30}'
-```
-
-Response `201`:
 ```json
-{"id": "person::abc-123", "name": "Max Mustermann", "email": "max@example.com", "age": 30}
+{
+  "id": "person::f4480c70-9192-461a-a1fe-b6801252412d",
+  "name": "Max Mustermann",
+  "email": "max@example.com",
+  "age": 30,
+  "_class": "at.htlwrn.couchbase.model.Person"
+}
 ```
 
-### Read by ID — GET /api/persons/{id}
+## Warum Couchbase?
 
-```bash
-curl http://localhost:8080/api/persons/person::abc-123
-```
+### Vorteile gegenüber anderen NoSQL-Datenbanken
 
-Response `200`:
-```json
-{"id": "person::abc-123", "name": "Max Mustermann", "email": "max@example.com", "age": 30}
-```
+| Eigenschaft | Couchbase | MongoDB | Redis |
+|-------------|-----------|---------|-------|
+| **Datenmodell** | Document + Key-Value | Document | Key-Value |
+| **Abfragesprache** | N1QL (SQL-kompatibel) | MQL (eigene Syntax) | Keine (nur Befehle) |
+| **Integrierter Cache** | Ja (Managed Object Cache) | Nein | Ja (ist primär Cache) |
+| **Replikation** | Intra-Cluster + XDCR | Replica Sets | Sentinel/Cluster |
 
-### Read All — GET /api/persons
+### Zentrale Stärken
 
-```bash
-curl http://localhost:8080/api/persons
-```
-
-Response `200`: Array aller Personen.
-
-### Update — PUT /api/persons/{id}
-
-```bash
-curl -X PUT http://localhost:8080/api/persons/person::abc-123 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Max M.", "email": "max2@example.com", "age": 31}'
-```
-
-Response `200`: Aktualisiertes Dokument.
-
-### Delete — DELETE /api/persons/{id}
-
-```bash
-curl -X DELETE http://localhost:8080/api/persons/person::abc-123
-```
-
-Response `204 No Content`.
-
-## Hochverfügbarkeits-UseCase
-
-Der 3-Knoten-Cluster mit Replication Factor 2 demonstriert Hochverfügbarkeit:
-
-```bash
-# Knoten 2 simuliert einen Ausfall
-docker compose stop couchbase-node2
-
-# API ist weiterhin erreichbar
-curl http://localhost:8080/api/persons
-
-# Knoten wieder hinzufügen
-docker compose start couchbase-node2
-```
-
-Couchbase failover greift automatisch nach dem konfigurierten Timeout.
-
-## Verteilte Architektur
-
-Durch Verwendung der öffentlichen IP-Adresse des Hosts (statt `localhost`) kann die API
-von anderen Maschinen erreicht werden. Im `docker-compose.yml` muss dazu der Port `8080`
-auf `0.0.0.0:8080` gebunden werden (Standardverhalten bei Docker).
-
-Für globale Erreichbarkeit kann z.B. `ngrok` verwendet werden:
-
-```bash
-ngrok http 8080
-```
-
-## Tests ausführen
-
-```bash
-make test
-```
+1. **Integrierter Cache**: Couchbase hält häufig genutzte Dokumente automatisch im RAM [1]
+2. **SQL-ähnliche Abfragen**: N1QL erlaubt JOINs, Aggregationen und Subqueries direkt auf JSON [2]
+3. **Multi-Dimensional Scaling**: Dienste können unabhängig skaliert werden [4]
+4. **Mobile Synchronisation**: Couchbase Lite ermöglicht Offline-First-Anwendungen [1]
