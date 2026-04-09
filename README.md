@@ -88,3 +88,48 @@ Couchbase trennt Workloads in unabhängige Dienste [4]:
 2. **SQL-ähnliche Abfragen**: N1QL erlaubt JOINs, Aggregationen und Subqueries direkt auf JSON [2]
 3. **Multi-Dimensional Scaling**: Dienste können unabhängig skaliert werden [4]
 4. **Mobile Synchronisation**: Couchbase Lite ermöglicht Offline-First-Anwendungen [1]
+
+## Replikation und Hochverfügbarkeit
+
+### Intra-Cluster-Replikation
+
+Couchbase verteilt Daten automatisch über alle Nodes mittels **vBuckets**. Jeder Bucket wird in 1024 vBuckets aufgeteilt, die gleichmäßig auf die Cluster-Nodes verteilt werden [3].
+
+```
+Dokument "person::abc"
+   │
+   ▼
+ Hash-Funktion → vBucket 742
+   │
+   ├── Active Copy   → Node 1  (liest/schreibt)
+   ├── Replica 1     → Node 2  (Backup)
+   └── Replica 2     → Node 3  (Backup)
+```
+
+### Replication Factor
+
+| Replication Factor | Kopien | Tolerierte Node-Ausfälle |
+|--------------------|--------|--------------------------|
+| 0 | 1 (nur Active) | 0 |
+| 1 | 2 (Active + 1 Replica) | 1 |
+| 2 | 3 (Active + 2 Replicas) | 2 |
+| 3 | 4 (Active + 3 Replicas) | 3 |
+
+In diesem Projekt verwenden wir **Replication Factor 2** bei einem 3-Node-Cluster (Docker Compose) bzw. **Replication Factor 1** bei einem 2-Node-Cluster (verteiltes Deployment). [5]
+
+### Automatic Failover
+
+Wenn ein Node ausfällt, erkennt Couchbase dies und aktiviert die Replica-vBuckets auf den verbleibenden Nodes [5]:
+
+```
+Normalzustand:
+  Node 1: vBucket 742 (Active)
+  Node 2: vBucket 742 (Replica)
+
+Node 1 fällt aus → Automatic Failover:
+  Node 2: vBucket 742 (Active ← promoted)
+```
+
+### Cross-Datacenter Replication (XDCR)
+
+Für geographisch verteilte Deployments bietet Couchbase **XDCR** — eine asynchrone Replikation zwischen separaten Clustern. Nur in der Enterprise Edition verfügbar. [6]
