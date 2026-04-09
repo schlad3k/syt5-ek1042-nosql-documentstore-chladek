@@ -1,9 +1,8 @@
-version: '3.8'
-
 services:
   couchbase-node1:
-    image: couchbase/server:community-7.6.0
+    image: ${COUCHBASE_IMAGE:-couchbase/server:community-7.6.0}
     container_name: couchbase-node1
+    hostname: couchbase-node1.demo
     ports:
       - "8091:8091"
       - "8093:8093"
@@ -11,23 +10,28 @@ services:
     environment:
       - CLUSTER_NAME=demo-cluster
     networks:
-      - couchbase-net
+      couchbase-net:
+        ipv4_address: ${CB_NODE1_IP:-172.28.0.2}
     volumes:
       - cb-node1-data:/opt/couchbase/var
 
   couchbase-node2:
-    image: couchbase/server:community-7.6.0
+    image: ${COUCHBASE_IMAGE:-couchbase/server:community-7.6.0}
     container_name: couchbase-node2
+    hostname: couchbase-node2.demo
     networks:
-      - couchbase-net
+      couchbase-net:
+        ipv4_address: ${CB_NODE2_IP:-172.28.0.3}
     volumes:
       - cb-node2-data:/opt/couchbase/var
 
   couchbase-node3:
-    image: couchbase/server:community-7.6.0
+    image: ${COUCHBASE_IMAGE:-couchbase/server:community-7.6.0}
     container_name: couchbase-node3
+    hostname: couchbase-node3.demo
     networks:
-      - couchbase-net
+      couchbase-net:
+        ipv4_address: ${CB_NODE3_IP:-172.28.0.4}
     volumes:
       - cb-node3-data:/opt/couchbase/var
 
@@ -40,6 +44,16 @@ services:
       - couchbase-node3
     volumes:
       - ./couchbase-init.sh:/init.sh
+    environment:
+      - CB_NODE1_IP=${CB_NODE1_IP:-172.28.0.2}
+      - CB_NODE2_IP=${CB_NODE2_IP:-172.28.0.3}
+      - CB_NODE3_IP=${CB_NODE3_IP:-172.28.0.4}
+      - CB_USER=${COUCHBASE_USERNAME:-Administrator}
+      - CB_PASS=${COUCHBASE_PASSWORD:-password}
+      - CB_BUCKET=${COUCHBASE_BUCKET:-demo}
+      - CB_MEMORY_QUOTA=${COUCHBASE_MEMORY_QUOTA:-512}
+      - CB_INDEX_MEMORY_QUOTA=${COUCHBASE_INDEX_MEMORY_QUOTA:-256}
+      - CB_REPLICA_COUNT=${COUCHBASE_REPLICA_COUNT:-2}
     entrypoint: ["/bin/sh", "/init.sh"]
     networks:
       - couchbase-net
@@ -50,12 +64,12 @@ services:
       dockerfile: Dockerfile
     container_name: spring-app
     ports:
-      - "8080:8080"
+      - "${SPRING_APP_PORT:-8080}:8080"
     environment:
-      - COUCHBASE_HOST=couchbase-node1
-      - COUCHBASE_USERNAME=Administrator
-      - COUCHBASE_PASSWORD=password
-      - COUCHBASE_BUCKET=demo
+      - COUCHBASE_HOST=couchbase-node1.demo
+      - COUCHBASE_USERNAME=${COUCHBASE_USERNAME:-Administrator}
+      - COUCHBASE_PASSWORD=${COUCHBASE_PASSWORD:-password}
+      - COUCHBASE_BUCKET=${COUCHBASE_BUCKET:-demo}
     depends_on:
       couchbase-init:
         condition: service_completed_successfully
@@ -65,6 +79,9 @@ services:
 networks:
   couchbase-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${CB_SUBNET:-172.28.0.0/16}
 
 volumes:
   cb-node1-data:
